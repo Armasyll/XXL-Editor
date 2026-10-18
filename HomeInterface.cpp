@@ -7,9 +7,12 @@
 #include <filesystem>
 #include <nlohmann/json.hpp>
 #include <thread>
+#include "Platform.h"
+#ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <Windows.h>
+#endif
 #include "window.h"
 #include "Image.h"
 #include "renderer.h"
@@ -298,6 +301,7 @@ void HomeInterface::iter()
 
 	if (ImGui::BeginPopup("AdvancedMenu")) {
 		if (ImGui::MenuItem("Extract resources")) {
+#ifdef _WIN32
 			auto enumproc = [](HMODULE hModule, LPCWSTR lpType, LPWSTR lpName, LONG_PTR lParam) -> BOOL {
 				if ((IS_INTRESOURCE(lpType)) || (IS_INTRESOURCE(lpName)))
 					return TRUE;
@@ -319,6 +323,28 @@ void HomeInterface::iter()
 			};
 			std::filesystem::create_directory("xec_resources");
 			EnumResourceNamesW(nullptr, L"DATA", enumproc, 0);
+#else
+			// There are no embedded resources on this system: the files already live in resources/ next
+			// to the executable or the working directory, so "extracting" them means copying them into
+			// the xec_resources override directory the resource loader looks at first.
+			std::error_code ec;
+			fs::create_directory("xec_resources", ec);
+			std::vector<fs::path> sourceDirs;
+			sourceDirs.push_back(fs::path("resources"));
+			fs::path exeDir = xxl::getExecutableDirectory();
+			if (!exeDir.empty())
+				sourceDirs.push_back(exeDir / "resources");
+			for (const fs::path& sourceDir : sourceDirs) {
+				if (!fs::is_directory(sourceDir, ec))
+					continue;
+				for (const fs::directory_entry& entry : fs::directory_iterator(sourceDir, ec)) {
+					if (!entry.is_regular_file(ec))
+						continue;
+					std::error_code copyError;
+					fs::copy_file(entry.path(), fs::path("xec_resources") / entry.path().filename(), fs::copy_options::overwrite_existing, copyError);
+				}
+			}
+#endif
 		}
 		ImGui::EndPopup();
 	}

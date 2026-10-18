@@ -66,7 +66,9 @@ struct RendererOGL1 : Renderer {
 		GLbitfield flags = 0;
 		if (clearColors) flags |= GL_COLOR_BUFFER_BIT;
 		if (clearDepth) flags |= GL_DEPTH_BUFFER_BIT;
-		glClearColor(0.25f, 0.25f, 1.0f, 1.0f);
+		// Colors arrive in the same format the D3D9 renderer takes (0xAARRGGBB), so the red channel is
+		// the byte at bits 16..23 here as well.
+		glClearColor(((color >> 16) & 0xFF) / 255.0f, ((color >> 8) & 0xFF) / 255.0f, (color & 0xFF) / 255.0f, ((color >> 24) & 0xFF) / 255.0f);
 		glClear(flags);
 	}
 	void setTransformMatrix(const Matrix &matrix) override
@@ -75,7 +77,7 @@ struct RendererOGL1 : Renderer {
 	}
 	void bindTexture(int stage, texture_t texture) override
 	{
-		glBindTexture(GL_TEXTURE_2D, (GLuint)texture);
+		glBindTexture(GL_TEXTURE_2D, (GLuint)(uintptr_t)texture);
 	}
 	void unbindTexture(int stage) override
 	{
@@ -106,7 +108,7 @@ struct RendererOGL1 : Renderer {
 	}
 	void deleteTexture(texture_t texture) override
 	{
-		GLuint gltex = (GLuint)texture;
+		GLuint gltex = (GLuint)(uintptr_t)texture;
 		glDeleteTextures(1, &gltex);
 	}
 	RVertexBuffer *createVertexBuffer(int numVerts) override

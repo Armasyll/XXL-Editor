@@ -1,11 +1,13 @@
 #pragma once
 
+#include <cstdint>
 #include <functional>
 //#include <typeinfo>
 #include <array>
 #include <cassert>
 #include <set>
 #include <span>
+#include <type_traits>
 #include <unordered_map>
 #include <vector>
 
@@ -41,8 +43,12 @@ struct CKObject {
 	virtual void onLevelSave(KEnvironment* kenv) {}
 
 	bool isSubclassOfID(int clcat, int clid) { return isSubclassOfID(clcat | (clid << 6)); }
-	template<typename T> bool isSubclassOf() { return isSubclassOfID(T::FULL_ID); }
-	template<> static constexpr bool isSubclassOf<CKObject>() { return true; }
+	template<typename T> bool isSubclassOf() {
+		if constexpr (std::is_same_v<T, CKObject>)
+			return true; // every object is an instance of CKObject itself
+		else
+			return isSubclassOfID(T::FULL_ID);
+	}
 	uint32_t getClassFullID() { return getClassCategory() | (getClassID() << 6); }
 	template<class T> T *cast() {
 		assert(isSubclassOfID(T::FULL_ID) && "CKObject Cast Fail");
@@ -99,7 +105,7 @@ struct KFactory {
 template<int T_CAT> struct CKCategory : CKObject {
 	static constexpr int CATEGORY = T_CAT;
 	static constexpr int FULL_ID = T_CAT;
-	static constexpr std::integer_sequence<int, T_CAT> HIERARCHY_INT_SEQ;
+	static constexpr std::integer_sequence<int, T_CAT> HIERARCHY_INT_SEQ { };
 
 	bool isSubclassOfID(uint32_t fid) override { return fid == CATEGORY; }
 	int getClassCategory() override { return CATEGORY; }

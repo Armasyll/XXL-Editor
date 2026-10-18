@@ -1,6 +1,7 @@
 #include "CKDictionary.h"
 #include "rw.h"
 #include "KEnvironment.h"
+#include <algorithm>
 #include <array>
 
 void CAnimationDictionary::deserialize(KEnvironment * kenv, File * file, size_t length)

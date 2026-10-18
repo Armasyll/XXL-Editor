@@ -6,7 +6,9 @@
 #include "window.h"
 #include <cstdint>
 #include <SDL2/SDL.h>
+#ifdef _WIN32
 #include <SDL2/SDL_syswm.h>
+#endif
 
 
 uint32_t g_imguiLastTime;

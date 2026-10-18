@@ -1,6 +1,7 @@
 #include "rwext.h"
 #include "rw.h"
 #include "File.h"
+#include <algorithm>
 #include <cassert>
 #include <set>
 
@@ -257,7 +258,7 @@ void RwExtSkin::merge(const RwExtSkin & other)
 		vertexWeights.push_back(vw);
 
 	for (int i = 0; i < numBones; i++)
-		if (std::find(other.usedBones.begin(), other.usedBones.end(), i) != other.usedBones.end())
+		if (std::find(other.usedBones.begin(), other.usedBones.end(), (uint8_t)i) != other.usedBones.end())
 			matrices[i] = other.matrices[i];
 }
 
@@ -345,7 +346,7 @@ void RwExtMaterialEffectsPLG_Material::deserialize(File* file, const RwsHeader& 
 		static constexpr size_t INDEX = decltype(_index)::value;
 		if constexpr (INDEX < std::variant_size_v<TVAR>) {
 			if (std::variant_alternative_t<INDEX, TVAR>::ID == fxType) {
-				var.emplace<INDEX>().read(file);
+				var.template emplace<INDEX>().read(file);
 				return true;
 			}
 			else {

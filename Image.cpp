@@ -1,4 +1,5 @@
 #include "Image.h"
+#include "Platform.h"
 
 #include <cassert>
 #include <cstring>

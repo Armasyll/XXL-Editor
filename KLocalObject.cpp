@@ -1,6 +1,8 @@
 #include "KLocalObject.h"
 #include "File.h"
 #include <cassert>
+#include <cstdlib>
+#include <cstring>
 
 void KUnknownLocalObject::deserialize(KEnvironment * kenv, File * file, size_t length)
 {

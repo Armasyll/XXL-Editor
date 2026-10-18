@@ -1,4 +1,5 @@
 #include "PropFlagsEditor.h"
+#include <charconv>
 #include <nlohmann/json.hpp>
 #include <vector>
 #include <imgui/imgui.h>

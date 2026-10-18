@@ -132,7 +132,7 @@ struct EditorInterface {
 	UISelection *nearestRayHit = nullptr;
 	template <class T, class... Us> void select(Us ... args) {
 		rayHits = {std::make_unique<T>(*this, args...)};
-		nearestRayHit = &rayHits[0];
+		nearestRayHit = rayHits[0].get();
 	}
 
 	Vector3 cursorPosition;

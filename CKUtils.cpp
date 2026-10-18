@@ -1,4 +1,5 @@
 #include "CKUtils.h"
+#include "Platform.h"
 #include "File.h"
 #include "vecmat.h"
 #include "KEnvironment.h"

@@ -127,12 +127,14 @@ struct KEnvironment {
 	CKObject *createObject(int clcat, int clid, int sector) { return createObject(clcat | (clid << 6), sector); }
 	template<class T> T *createObject(int sector) { return (T*)createObject(T::FULL_ID, sector); }
 	template<class T> T *createAndInitObject(int sector = -1) { T *obj = createObject<T>(sector); obj->init(this); return obj; }
-	template<class T> T* cloneObject(const T* original, int sector = -1) { return cloneObject<CKObject>(original, sector)->cast<T>(); }
-	template<> CKObject* cloneObject<CKObject>(const CKObject* original, int sector) {
+	template<class T> T* cloneObject(const T* original, int sector = -1) {
 		uint32_t fid = ((CKObject*)original)->getClassFullID();
 		CKObject* clone = createObject(fid, sector);
 		factories.at(fid).copy(original, clone);
-		return clone;
+		if constexpr (std::is_same_v<T, CKObject>)
+			return clone; // CKObject itself has no FULL_ID to check against, so it cannot be cast
+		else
+			return clone->cast<T>();
 	}
 
 	void removeObject(CKObject *obj);

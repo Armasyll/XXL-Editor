@@ -1,7 +1,9 @@
 #include "window.h"
 #include <SDL2/SDL.h>
 #include "imgui/imgui.h"
+#ifdef _WIN32
 #include <SDL2/SDL_syswm.h>
+#endif
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -9,9 +11,45 @@
 #include <commdlg.h>
 #endif
 
+#ifndef _WIN32
+#include "File.h"
+#include "Image.h"
+#endif
+
+#ifndef _WIN32
+// On Windows the window icon comes from the executable's .rc file; here it is the logo the editor
+// already ships in its resources.
+static void setPlatformWindowIcon(SDL_Window* window)
+{
+	auto [ptr, size] = GetResourceContent("logo.png");
+	if (!ptr || size == 0)
+		return;
+	Image image = Image::loadFromMemory(ptr, size);
+	SDL_Surface* surface = SDL_CreateRGBSurfaceWithFormatFrom(image.pixels.data(), (int)image.width, (int)image.height, 32, (int)image.pitch, SDL_PIXELFORMAT_ABGR8888);
+	if (!surface)
+		return;
+	SDL_SetWindowIcon(window, surface);
+	SDL_FreeSurface(surface);
+}
+#endif
+
 Window::Window()
 {
+#ifndef _WIN32
+	// The non-Windows build draws with OpenGL 1.x: it needs a depth buffer for the 3D viewport and an
+	// alpha channel for the alpha-tested materials, so those are requested before the window exists.
+	SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+	SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
+	SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 8);
+	SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
+	SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8);
+	SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
+	SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8);
+#endif
 	_sw = SDL_CreateWindow("XXL Editor", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, _width=1280, _height=720, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
+#ifndef _WIN32
+	setPlatformWindowIcon(_sw);
+#endif
 }
 
 static int igMouseIndex(int sdl) {
@@ -89,11 +127,17 @@ static void HandleImGui(const SDL_Event &event)
 
 void * Window::getNativeWindow()
 {
+#ifdef _WIN32
 	SDL_SysWMinfo syswm;
 	SDL_VERSION(&syswm.version);
 	SDL_GetWindowWMInfo(getSDLWindow(), &syswm);
 	HWND hWindow = syswm.info.win.window;
 	return (void*)hWindow;
+#else
+	// Other systems have no HWND: the dialogs, the file pickers and the game launcher go through SDL,
+	// zenity/kdialog and /proc instead of a native handle, so this returns the SDL window itself.
+	return (void*)_sw;
+#endif
 }
 
 void Window::handle()

@@ -8,7 +8,7 @@ The level editor is still in early development, thus some features might be miss
 
 Licensed under the MIT License.
 
-Only works on Windows (Vista and later), though efforts are done to make ports to other operating systems easy in the future.
+Only works on Windows (Vista and later) or natively on Linux (X11 or Wayland through SDL2), though efforts are done to make ports to other operating systems easy in the future.
 
 To download the editor, go to the [Releases page](https://github.com/AdrienTD/XXL-Editor/releases).
 
@@ -59,9 +59,32 @@ The Remasters of both XXL 1 and XXL 2 are also supported. While the editor does 
 modifying them there won't have any effect since the remaster replaces them with converted assets in the Cooking folder for the new graphics engine.
 
 ## Compiling Requirements
+
+### Windows
 * Visual Studio 2017/2019 (other versions untested)
 * [vcpkg](https://github.com/Microsoft/vcpkg) with the following installed packages: inih, sdl2, stb, libsquish, nlohmann-json
 * Open the VS solution file, and as long as [vcpkg integration](https://docs.microsoft.com/en-us/cpp/build/integrate-vcpkg) is applied, you should be able to compile.
+
+### Linux
+The editor builds and runs natively on Linux: SDL2 for the window and input, OpenGL for the viewport, zenity (or kdialog) for the file pickers and message boxes, and `/proc/<pid>/mem` plus `process_vm_readv` to poke a running game for "test level in game".
+
+Requirements (Arch names first, in brackets the Debian/Ubuntu ones):
+* a C++20 compiler (GCC 11+ or Clang 14+) and CMake 3.16+ with Ninja or Make
+* `sdl2` (libsdl2-dev), `zlib` (zlib1g-dev), `fmt` (libfmt-dev), `inih` with INIReader (libinih-dev), OpenGL (libglvnd-dev)
+* `zenity` (GNOME) or `kdialog` (KDE) for the file and message dialogs
+* optional: `wine` to launch a PC copy of a game with "Test level in game", and `xdotool` to bring the game's window back to the front afterwards
+
+nlohmann/json, stb and libsquish are used from the system when they are installed, otherwise the copies in `third_party/` are built in (see [third_party/README.md](third_party/README.md)).
+
+```sh
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+./build/xxl-editor            # optionally: ./build/xxl-editor /path/to/project.xecp
+```
+
+The build copies `resources/` next to the binary, and the editor also looks for them in `./resources` and `./xec_resources` (the override directory, which the "Extract resources" menu item fills on Linux by copying `resources/` into it). `xec-settings.ini`, `projectPaths.txt` and `imgui.ini` are read and written in the working directory, exactly as on Windows.
+
+To check the port itself without owning a copy of a game, set `test=true` in `xec-settings.ini`, start the editor and pick "Platform basics" (text conversions, resources, non-ASCII file names, gzip levels, the MSVC-style string helpers).
 
 ## Thanks
 * Thanks to S.P.Q.R. for some code addition and names for events and squad actions.

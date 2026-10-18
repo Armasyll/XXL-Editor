@@ -205,6 +205,7 @@
     <ClInclude Include="GamePatcherKClasses.h" />
     <ClInclude Include="GroundRenderer.h" />
     <ClInclude Include="GuiUtils.h" />
+    <ClInclude Include="Platform.h" />
     <ClInclude Include="HexEditor.h" />
     <ClInclude Include="HomeInterface.h" />
     <ClInclude Include="CoreClasses\IKRenderable.h" />

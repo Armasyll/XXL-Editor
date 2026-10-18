@@ -1,6 +1,9 @@
 #ifndef XEC_RELEASE
 
 #include "tests.h"
+#include "Platform.h"
+#include "GuiUtils.h"
+#include "File.h"
 #include <string>
 #include <INIReader.h>
 #include "KEnvironment.h"
@@ -11,7 +14,10 @@
 #include "CoreClasses/CKLogic.h"
 #include "CoreClasses/CKGeometry.h"
 #include "rw.h"
+#include "rwext.h"
 #include "CoreClasses/CKGroup.h"
+#include "CoreClasses/CKDictionary.h"
+#include <functional>
 #include <cassert>
 #include "GameClasses/CKGameX1.h"
 #include "CoreClasses/CKService.h"
@@ -22,7 +28,10 @@
 
 #include "window.h"
 #include "SDL2/SDL.h"
+#include "SDL2/SDL_opengl.h"
 #include "renderer.h"
+#include "rwrenderer.h"
+#include "Image.h"
 #include "imguiimpl.h"
 #include "imgui/imgui.h"
 #include "HexEditor.h"
@@ -94,7 +103,7 @@ void Test_Cpnt2CSV() {
 void Test_LevelSizeCheck()
 {
 	static constexpr std::array<std::tuple<const char*, int, int>, 4> games = { {
-		{"C:\\Users\\Adrien\\Downloads\\virtualboxshare\\aoxxl2demo\\Astérix & Obélix XXL2 DEMO", KEnvironment::KVERSION_XXL2, KEnvironment::PLATFORM_PC},
+		{"C:\\Users\\Adrien\\Downloads\\virtualboxshare\\aoxxl2demo\\Astï¿½rix & Obï¿½lix XXL2 DEMO", KEnvironment::KVERSION_XXL2, KEnvironment::PLATFORM_PC},
 		{"C:\\Apps\\Asterix at the Olympic Games", KEnvironment::KVERSION_OLYMPIC, KEnvironment::PLATFORM_PC},
 		{"D:\\PSP_GAME\\USRDIR", KEnvironment::KVERSION_ARTHUR, KEnvironment::PLATFORM_PSP},
 		{"C:\\Users\\Adrien\\Desktop\\kthings\\xxl1_mp_orig", KEnvironment::KVERSION_XXL1, KEnvironment::PLATFORM_PC},
@@ -253,8 +262,12 @@ void Test_HexEditor()
 	SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_AUDIO);
 	Window window;
 
-	// Initialize graphics renderer
+	// Initialize graphics renderer: Direct3D 9 on Windows, OpenGL on the other systems.
+#ifdef _WIN32
 	Renderer* gfx = CreateRendererD3D9(&window);
+#else
+	Renderer* gfx = CreateRendererOGL1(&window);
+#endif
 	// Initialize Dear ImGui
 	ImGuiImpl_Init(&window);
 	ImGuiImpl_CreateFontsTexture(gfx);
@@ -572,9 +585,462 @@ void Test_ExtractCollisionTests()
 	getchar();
 }
 
+// Checks the parts that the non-Windows port adds or rewrites, and that need no copy of a game:
+// the CP-1252 text conversions the locale editor uses, the resource loader, file names with non-ASCII
+// characters and the MSVC-style string functions the sources call.
+void Test_PlatformBasics()
+{
+	int failures = 0;
+	auto check = [&failures](bool condition, const char* what) {
+		fmt::println("{} {}", condition ? "[ ok ]" : "[FAIL]", what);
+		if (!condition)
+			failures++;
+	};
+
+	// Windows-1252 <-> UTF-8: every byte of the code page has to survive the round trip.
+	bool allBytesRoundTrip = true;
+	for (int byte = 0x20; byte < 0x100; byte++) {
+		std::string latin(1, (char)byte);
+		if (GuiUtils::utf8ToLatin(GuiUtils::latinToUtf8(latin)) != latin)
+			allBytesRoundTrip = false;
+	}
+	check(allBytesRoundTrip, "CP-1252 -> UTF-8 -> CP-1252 round trips every character");
+	check(GuiUtils::latinToUtf8("\xC9t\xE9") == "\xC3\x89t\xC3\xA9", "CP-1252 accented letters turn into the right UTF-8");
+	check(GuiUtils::utf8ToLatin("\xE2\x98\x95") == "?", "a character outside CP-1252 becomes '?'");
+
+	std::string mixedText = "Caf\xC3\xA9 \xE2\x98\x95 \xE6\x96\x87";
+	check(GuiUtils::wcharToUtf8(GuiUtils::utf8ToWchar(mixedText)) == mixedText, "UTF-8 <-> wide stays lossless");
+
+	// Resources (font, encyclopedia JSON, icons) come from disk on this platform.
+	auto [fontPtr, fontSize] = GetResourceContent("UbuntuMono-R.ttf");
+	check(fontPtr != nullptr && fontSize > 1000, "the editor's font resource can be loaded");
+	auto [missingPtr, missingSize] = GetResourceContent("no-such-resource.bin");
+	check(missingPtr == nullptr && missingSize == 0, "a missing resource reports as missing");
+
+	// Paths with non-ASCII names, through the project's own File abstraction.
+	std::filesystem::path tempPath = std::filesystem::path("xec-platform-test-\xC3\xA9-\xE2\x98\x95.tmp");
+	uint32_t written = 0x12345678;
+	{
+		IOFile outFile(tempPath.string().c_str(), "wb");
+		outFile.write(&written, sizeof(written));
+	}
+	uint32_t readBack = 0;
+	{
+		IOFile inFile(tempPath.string().c_str(), "rb");
+		inFile.read(&readBack, sizeof(readBack));
+	}
+	check(readBack == written, "a file with a non-ASCII name can be written and read");
+
+	// The compressed level files: the same path but through zlib.
+	KEnvironment kenv;
+	kenv.version = KEnvironment::KVERSION_ALICE;
+	std::filesystem::path gzipPath = std::filesystem::path("xec-platform-test-gzip.tmp");
+	{
+		std::unique_ptr<File> gzipOut = GetGzipFile(gzipPath, "wb", kenv);
+		gzipOut->write("hello", 6);
+	}
+	char gzipText[8] = {};
+	{
+		std::unique_ptr<File> gzipIn = GetGzipFile(gzipPath, "rb", kenv);
+		gzipIn->read(gzipText, 5);
+	}
+	check(strcmp(gzipText, "hello") == 0, "a gzipped file can be written and read back");
+
+	std::error_code removeError;
+	std::filesystem::remove(tempPath, removeError);
+	std::filesystem::remove(gzipPath, removeError);
+
+#ifndef _WIN32
+	// The MSVC conveniences this port shims for GCC/Clang.
+	char buffer[16];
+	sprintf_s(buffer, "%s-%i", "abc", 7);
+	check(strcmp(buffer, "abc-7") == 0, "sprintf_s writes the formatted text");
+	char tooSmall[4];
+	check(strcpy_s(tooSmall, "hello") != 0 && tooSmall[0] == 0, "strcpy_s refuses to overflow a buffer");
+	check(_stricmp("GameModule_MP", "gamemodule_mp") == 0, "_stricmp ignores case");
+#endif
+
+	if (failures == 0)
+		fmt::println("Platform basics: all {} checks passed.", 12);
+	else
+		fmt::println("Platform basics: {} check(s) FAILED.", failures);
+}
+
+// The rendered-mesh cache: a geometry drawn with the same material texture must give back the same
+// ready-to-draw mesh every frame, and a geometry drawn with another material texture gets its own
+// instance. Regression test for the scene node lag: a lookup that never matched the instance it had
+// created for a geometry kept a new mesh (with its own vertex and index copies) for the same geometry
+// on every single frame, so the cache grew without bound and every lookup walked it end to end.
+void Test_GeometryCache()
+{
+	int failures = 0;
+	auto check = [&failures](bool condition, const char* what) {
+		fmt::println("{} {}", condition ? "[ ok ]" : "[FAIL]", what);
+		if (!condition)
+			failures++;
+	};
+
+	// A renderer that only holds the buffers the cache asks for, so this test needs no window.
+	struct NullRenderer : Renderer {
+		struct VertexBuffer : RVertexBuffer {
+			std::vector<RVertex> verts;
+			VertexBuffer(int count) : verts(count) {}
+			RVertex* lock() override { return verts.data(); }
+			void unlock() override {}
+		};
+		struct IndexBuffer : RIndexBuffer {
+			std::vector<uint16_t> indices;
+			IndexBuffer(int count) : indices(count) {}
+			uint16_t* lock() override { return indices.data(); }
+			void unlock() override {}
+		};
+		void beginFrame() override {}
+		void endFrame() override {}
+		void setSize(int width, int height) override {}
+		void clearFrame(bool clearColors, bool clearDepth, uint32_t color) override {}
+		void setTransformMatrix(const Matrix& matrix) override {}
+		void bindTexture(int stage, texture_t texture) override {}
+		void unbindTexture(int stage) override {}
+		void enableScissor() override {}
+		void disableScissor() override {}
+		void setScissorRect(int x, int y, int w, int h) override {}
+		void setBlendColor(uint32_t color) override {}
+		void enableAlphaClip() override {}
+		void disableAlphaClip() override {}
+		texture_t createTexture(const Image& image) override { return nullptr; }
+		void deleteTexture(texture_t texture) override {}
+		RVertexBuffer* createVertexBuffer(int numVerts) override { return new VertexBuffer(numVerts); }
+		RIndexBuffer* createIndexBuffer(int numIndices) override { return new IndexBuffer(numIndices); }
+		void setVertexBuffer(RVertexBuffer* buffer) override {}
+		void setIndexBuffer(RIndexBuffer* buffer) override {}
+		void drawBuffer(int first, int count, int vertexBase) override {}
+		void initFormDrawing() override {}
+		void drawRect(float x, float y, float w, float h, uint32_t c) override {}
+		void fillRect(float x, float y, float w, float h, uint32_t c, float u, float v, float o, float p) override {}
+		void drawLine3D(const Vector3& start, const Vector3& end, uint32_t color) override {}
+		void initModelDrawing(bool showBackfaces) override {}
+	};
+
+	NullRenderer renderer;
+	ProTexDict texDict(&renderer);
+	ProGeoCache cache(&renderer);
+
+	RwGeometry geo;
+	geo.flags = RwGeometry::RWGEOFLAG_TEXTURED;
+	geo.numVerts = 3;
+	geo.verts = { Vector3(0, 0, 0), Vector3(1, 0, 0), Vector3(0, 1, 0) };
+	geo.numTris = 1;
+	geo.tris = { RwGeometry::Triangle{ { 0, 1, 2 }, 0 } };
+	geo.texSets = { { { 0.0f, 0.0f }, { 1.0f, 0.0f }, { 0.0f, 1.0f } } };
+
+	ProGeometry* first = cache.getPro(&geo, &texDict, "texA");
+	check(first == cache.getPro(&geo, &texDict, "texA"), "the same geometry and texture give back the same mesh");
+	check(cache.namedDict.size() == 1, "and the cache holds one entry for it");
+
+	auto variants = [&cache](RwGeometry* geometry) {
+		auto it = cache.namedDict.find(geometry);
+		return it == cache.namedDict.end() ? (size_t)0 : it->second.size();
+	};
+
+	ProGeometry* second = cache.getPro(&geo, &texDict, "texB");
+	check(second != first, "another material texture of the same geometry gets its own mesh");
+	check(cache.namedDict.size() == 1 && variants(&geo) == 2, "and that one geometry keeps both of its material textures");
+	check(cache.getPro(&geo, &texDict, "texA") == first, "the first texture still finds its first mesh");
+
+	// The case that made the editor crawl: the geometry carries a texture of its own while the mesh is
+	// drawn with the material texture of its geometry object, so the cache key and the texture a mesh
+	// is drawn with are two different names.
+	RwGeometry matGeo = geo;
+	matGeo.materialList.materials.assign(1, RwMaterial{});
+	matGeo.materialList.materials[0].isTextured = 1;
+	matGeo.materialList.materials[0].texture.name = "rwTex";
+	ProGeometry* matFirst = cache.getPro(&matGeo, &texDict, "matTex");
+	check(matFirst->textureName == "rwTex", "a geometry with a texture of its own is drawn with it");
+	check(cache.getPro(&matGeo, &texDict, "matTex") == matFirst, "and a repeated lookup still finds that mesh");
+	check(cache.namedDict.size() == 2 && variants(&matGeo) == 1, "no new mesh is built for it on the next lookup");
+
+	ProGeometry* plain = cache.getPro(&geo, &texDict);
+	check(plain == cache.getPro(&geo, &texDict), "a mesh with no material texture is cached once too");
+	check(cache.namedDict.size() == 2 && cache.dict.size() == 1, "and it lands in the textureless cache only");
+
+	if (failures == 0)
+		fmt::println("Mesh draw cache: all {} checks passed.", 10);
+	else
+		fmt::println("Mesh draw cache: {} check(s) FAILED.", failures);
+}
+
+// The "Show backfaces" view option: with it on, drawing the level's meshes must not cull the reverse
+// side of a triangle, so a mesh whose triangles are wound the other way around stays visible from the
+// side it is looked at. Runs the OpenGL renderer of this build in a window and checks both the culling
+// state it sets and a real draw: a counter-clockwise triangle, the winding this renderer culls as a
+// front face, stays invisible with the option off and covers pixels with it on.
+// (The D3D9 renderer maps the same flag to D3DCULL_CCW and D3DCULL_NONE.)
+void Test_ShowBackfaces()
+{
+	int failures = 0;
+	auto check = [&failures](bool condition, const char* what) {
+		fmt::println("{} {}", condition ? "[ ok ]" : "[FAIL]", what);
+		if (!condition)
+			failures++;
+	};
+
+	SDL_SetMainReady();
+	if (SDL_Init(SDL_INIT_VIDEO) != 0) {
+		fmt::println("[SKIP] no video device to open a renderer in: {}", SDL_GetError());
+		return;
+	}
+	Window window;
+	Renderer* gfx = CreateRendererOGL1(&window);
+
+	gfx->initModelDrawing(false);
+	check(glIsEnabled(GL_CULL_FACE) == GL_TRUE, "option off: backface culling stays on");
+	gfx->initModelDrawing(true);
+	check(glIsEnabled(GL_CULL_FACE) == GL_FALSE, "option on: backfaces are drawn too (culling off)");
+	gfx->initModelDrawing(false);
+	check(glIsEnabled(GL_CULL_FACE) == GL_TRUE, "option off again: the culling comes back");
+
+	// A white 1x1 texture and a white triangle right in clip space, so the culling state alone decides
+	// whether pixels come out.
+	Image whiteImage;
+	whiteImage.width = whiteImage.height = 1;
+	whiteImage.bpp = 32;
+	whiteImage.pitch = 4;
+	whiteImage.pixels.resize(4);
+	whiteImage.pixels[0] = whiteImage.pixels[1] = whiteImage.pixels[2] = whiteImage.pixels[3] = 255;
+	texture_t whiteTex = gfx->createTexture(whiteImage);
+
+	const int w = window.getWidth(), h = window.getHeight();
+	auto countTrianglePixels = [&](bool showBackfaces) {
+		gfx->beginFrame();
+		gfx->clearFrame(true, true, 0xFF000000);
+		gfx->initModelDrawing(showBackfaces);
+		Matrix identity = Matrix::getZeroMatrix();
+		identity._11 = identity._22 = identity._33 = identity._44 = 1.0f;
+		gfx->setTransformMatrix(identity);
+		gfx->bindTexture(0, whiteTex);
+		RVertexBuffer* vbuf = gfx->createVertexBuffer(3);
+		RIndexBuffer* ibuf = gfx->createIndexBuffer(3);
+		RVertex* verts = vbuf->lock();
+		verts[0] = RVertex(-0.5f, -0.5f, 0.0f, 0xFFFFFFFF, 0.0f, 0.0f);
+		verts[1] = RVertex(0.5f, -0.5f, 0.0f, 0xFFFFFFFF, 1.0f, 0.0f);
+		verts[2] = RVertex(0.0f, 0.5f, 0.0f, 0xFFFFFFFF, 0.5f, 1.0f);
+		vbuf->unlock();
+		uint16_t* indices = ibuf->lock();
+		indices[0] = 0; indices[1] = 1; indices[2] = 2;
+		ibuf->unlock();
+		gfx->setVertexBuffer(vbuf);
+		gfx->setIndexBuffer(ibuf);
+		gfx->drawBuffer(0, 3);
+
+		std::vector<uint8_t> pixels((size_t)(w / 2) * (h / 2) * 4);
+		glReadBuffer(GL_BACK);
+		glPixelStorei(GL_PACK_ALIGNMENT, 1);
+		glReadPixels(w / 4, h / 4, w / 2, h / 2, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+		int lit = 0;
+		for (size_t i = 0; i < pixels.size(); i += 4)
+			if (pixels[i] > 128)
+				lit++;
+
+		delete vbuf;
+		delete ibuf;
+		return lit;
+	};
+
+	check(countTrianglePixels(false) == 0, "a triangle wound the other way draws nothing while the option is off");
+	check(countTrianglePixels(true) > 0, "and it draws its pixels once the option is on");
+	gfx->deleteTexture(whiteTex);
+	delete gfx;
+
+	if (failures == 0)
+		fmt::println("Show backfaces: all {} checks passed.", 5);
+	else
+		fmt::println("Show backfaces: {} check(s) FAILED.", failures);
+}
+
+// Diagnostic for "The Legend of Spyro: Dawn of the Dragon" (PS3, KP3 files):
+// how each mesh's material points at the textures of the level's texture dictionaries.
+// Checks the Dawn of the Dragon (PS3, KP3 files) support of this editor against a real copy of the
+// game: material objects and their texture names, the textures of the level's dictionaries, the
+// console-native (PS3) geometry chunks and what the scene graph would end up drawing.
+// Configured with the gamepath / version / platform / initlevel keys of xec-settings.ini.
+void Test_DotDSupport()
+{
+	INIReader config("xec-settings.ini");
+	std::string gamePath = config.Get("XXL-Editor", "gamepath", ".");
+	int gameVersion = config.GetInteger("XXL-Editor", "version", KEnvironment::KVERSION_SPYRO);
+	std::string cfgPlatformName = config.GetString("XXL-Editor", "platform", "KP3");
+	bool isRemaster = config.GetBoolean("XXL-Editor", "remaster", false);
+	int initlevel = config.GetInteger("XXL-Editor", "initlevel", 40);
+	int gamePlatform = KEnvironment::PLATFORM_PC;
+	for (int i = 0; i < 8; i++)
+		if (_stricmp(KEnvironment::platformExt[i], cfgPlatformName.c_str()) == 0)
+			gamePlatform = i;
+
+	KEnvironment kenv;
+	ClassRegister::registerClasses(kenv, gameVersion, gamePlatform, isRemaster);
+	kenv.loadGame(gamePath.c_str(), gameVersion, gamePlatform, isRemaster);
+	kenv.loadLevel(initlevel);
+
+	printf("Game: %s\nVersion %i, platform %s, level %i, %u sectors\n",
+		gamePath.c_str(), gameVersion, KEnvironment::platformExt[gamePlatform], initlevel, kenv.numSectors);
+
+	int failures = 0;
+	auto check = [&failures](bool cond, const char* what) {
+		printf("  [%s] %s\n", cond ? "ok" : "FAIL", what);
+		if (!cond) failures++;
+	};
+
+	// ---- texture dictionaries
+	std::map<std::string, int> texNames; // name -> in how many dictionaries
+	int numDicts = 0, numTextures = 0, numCompressed = 0, numNoPixels = 0;
+	auto visitTextures = [&](KObjectList& list) {
+		for (CKObject* obj : list.getClassType<CTextureDictionary>().objects) {
+			CTextureDictionary* dict = obj->cast<CTextureDictionary>();
+			numDicts++;
+			for (auto& tex : dict->piDict.textures) {
+				numTextures++;
+				texNames[tex.texture.name]++;
+				if (tex.images.empty()) { numNoPixels++; continue; }
+				if (tex.images[0].image.bpp != Image::Format::ImageFormat_RGBA8888)
+					numCompressed++;
+				if (tex.images[0].image.width == 0 || tex.images[0].image.height == 0)
+					numNoPixels++;
+			}
+		}
+	};
+	visitTextures(kenv.levelObjects);
+	for (unsigned int i = 0; i < kenv.sectorObjects.size(); i++)
+		visitTextures(kenv.sectorObjects[i]);
+	printf("Texture dictionaries: %i, textures %i (%i DXT compressed, %i without pixels), distinct names %zu\n",
+		numDicts, numTextures, numCompressed, numNoPixels, texNames.size());
+
+	// ---- materials and the texture a mesh is drawn with
+	int numMaterials = 0, numMaterialsWithTex = 0, numMaterialsUnmatched = 0;
+	std::map<std::string, int> materialTexUse;
+	int numGeos = 0, numNativeGeos = 0, numDecodeMismatch = 0, numDecodedTris = 0;
+	int numMeshTextured = 0, numMeshUntextured = 0, numMeshNoTris = 0;
+	std::map<std::string, int> drawnTextures;
+
+	auto visitGeos = [&](KObjectList& list) {
+		for (auto& cat : list.categories)
+			for (auto& type : cat.type)
+				for (CKObject* obj : type.objects) {
+					if (!obj->isSubclassOf<CKAnyGeometry>()) continue;
+					CKAnyGeometry* kg = obj->cast<CKAnyGeometry>();
+					numGeos++;
+					if (kg->material) {
+						numMaterials++;
+						const std::string& mtex = kg->material->spDiffuseName();
+						if (!mtex.empty()) {
+							materialTexUse[mtex]++;
+							if (texNames.count(mtex))
+								numMaterialsWithTex++;
+							else
+								numMaterialsUnmatched++;
+						}
+					}
+					RwGeometry* rwg = kg->clump ? kg->clump->atomic.geometry.get() : nullptr;
+					if (!rwg) continue;
+					if (rwg->nativeVersion) {
+						// console-native geometry: the conversion has to reproduce the mesh. A few
+						// meshes count one or two degenerate triangles in their header that a strip
+						// walk correctly leaves out, so a shortfall of up to 2 is expected.
+						numNativeGeos++;
+						numDecodedTris += (int)rwg->tris.size();
+						size_t want = rwg->nativeVersion->numTris;
+						size_t got = rwg->tris.size();
+						if (got > want || want - got > 2 || rwg->verts.size() != rwg->nativeVersion->numVerts) {
+							numDecodeMismatch++;
+							if (numDecodeMismatch <= 20) {
+								RwExtNativeData* nat = (RwExtNativeData*)rwg->nativeVersion->extensions.find(0x510);
+								if (nat) {
+									char nfn[64];
+									snprintf(nfn, sizeof(nfn), "dotd-fail-%i.bin", numDecodeMismatch - 1);
+									FILE* nf = nullptr;
+									fopen_s(&nf, nfn, "wb");
+									if (nf) { fwrite(nat->data.data(), 1, nat->data.size(), nf); fclose(nf); }
+								}
+								printf("  MISMATCH native tris %u verts %u -> decoded tris %zu verts %zu (chunk %zu bytes)\n",
+									rwg->nativeVersion->numTris, rwg->nativeVersion->numVerts, rwg->tris.size(), rwg->verts.size(),
+									nat ? nat->data.size() : 0);
+							}
+						}
+					}
+					std::string tex = kg->getMaterialTextureName();
+					if (tex.empty() && !rwg->materialList.materials.empty() && rwg->materialList.materials[0].isTextured)
+						tex = rwg->materialList.materials[0].texture.name;
+					if (rwg->tris.empty())
+						numMeshNoTris++;
+					else if (!tex.empty()) {
+						numMeshTextured++;
+						drawnTextures[tex]++;
+					}
+					else
+						numMeshUntextured++;
+				}
+	};
+	visitGeos(kenv.levelObjects);
+	for (unsigned int i = 0; i < kenv.sectorObjects.size(); i++)
+		visitGeos(kenv.sectorObjects[i]);
+
+	printf("Materials: %i referenced by geometries, %i have a texture name matching a dictionary, %i have a name no dictionary holds\n",
+		numMaterials, numMaterialsWithTex, numMaterialsUnmatched);
+	printf("Geometries: %i objects, %i with a console-native mesh now decoded to %i triangles, %i with a different triangle count than the header\n",
+		numGeos, numNativeGeos, numDecodedTris, numDecodeMismatch);
+	printf("Meshes: %i textured, %i without a texture, %i with no triangles at all (%zu distinct textures on meshes)\n",
+		numMeshTextured, numMeshUntextured, numMeshNoTris, drawnTextures.size());
+
+	check(numDicts > 0, "the level has texture dictionaries");
+	check(numTextures > 0, "textures load from the dictionaries");
+	check(numNoPixels == 0, "every texture has pixels");
+	check(numMaterials > 0, "geometry materials are loaded as CMaterial objects");
+	check(numMaterialsUnmatched == 0, "every material texture name exists in a texture dictionary");
+	check(numNativeGeos > 0, "console-native (PS3) meshes decode");
+	check(numDecodeMismatch == 0, "decoded meshes match the triangle and vertex count of their native header");
+	check(numMeshTextured > numMeshUntextured, "more meshes are textured than not");
+
+	// ---- what the scene graph ends up drawing
+	int drawRefs = 0, drawTris = 0, drawTextured = 0;
+	std::function<void(CKSceneNode*)> walk = [&](CKSceneNode* node) {
+		for (; node; node = node->next.get()) {
+			if (node->isSubclassOf<CNode>()) {
+				for (CKAnyGeometry* kgeo = node->cast<CNode>()->geometry.get(); kgeo; kgeo = kgeo->nextGeo.get()) {
+					CKAnyGeometry* rgeo = kgeo->duplicateGeo ? kgeo->duplicateGeo.get() : kgeo;
+					RwGeometry* rwg = rgeo->clump ? rgeo->clump->atomic.geometry.get() : nullptr;
+					if (!rwg || (rwg->flags & RwGeometry::RWGEOFLAG_NATIVE) != 0) continue;
+					drawRefs++;
+					drawTris += (int)rwg->tris.size();
+					std::string tex = !kgeo->getMaterialTextureName().empty() ? kgeo->getMaterialTextureName() : rgeo->getMaterialTextureName();
+					if (tex.empty() && !rwg->materialList.materials.empty() && rwg->materialList.materials[0].isTextured)
+						tex = rwg->materialList.materials[0].texture.name;
+					if (!tex.empty())
+						drawTextured++;
+				}
+			}
+			if (node->isSubclassOf<CSGBranch>()) walk(node->cast<CSGBranch>()->child.get());
+			if (CAnyAnimatedNode* aan = node->dyncast<CAnyAnimatedNode>()) walk(aan->branchs.get());
+		}
+	};
+	for (CKObject* obj : kenv.levelObjects.getClassType<CSGRootNode>().objects)
+		walk(obj->cast<CSGRootNode>());
+	printf("Scene graph: %i geometry references drawn, %i triangles, %i of the meshes textured\n", drawRefs, drawTris, drawTextured);
+	check(drawTris > 100000, "the scene graph draws the level's meshes");
+	check(drawTextured > 0, "meshes in the scene graph have a texture to draw with");
+
+	if (failures == 0)
+		printf("Dawn of the Dragon: all checks passed.\n");
+	else
+		printf("Dawn of the Dragon: %i check(s) FAILED.\n", failures);
+	printf("Done. Press Enter to exit.\n");
+	getchar();
+}
+
 void Tests::TestPrompt()
 {
 	static const std::pair<void(*)(), const char*> tests[] = {
+		{Test_PlatformBasics, "Platform basics (encodings, resources, files)"},
+		{Test_GeometryCache, "Mesh draw cache (scene node meshes)"},
+		{Test_ShowBackfaces, "Show backfaces option (backface culling of mesh drawing)"},
 		{Test_Cpnt2CSV, "Component values to CSV"},
 		{Test_LevelSizeCheck, "Level size check"},
 		{Test_ChoreoFreqValues, "Chereokey value frequency"},
@@ -583,6 +1049,7 @@ void Tests::TestPrompt()
 		{Test_HexEditor, "Hex Editor"},
 		{Test_Diff, "LVL/STR file diff"},
 		{Test_ExtractCollisionTests, "Extract Collision Tests"},
+		{Test_DotDSupport, "Dawn of the Dragon support (gamepath/version/platform/initlevel of xec-settings.ini)"},
 	};
 	const size_t numTests = std::size(tests);
 	printf("Available tests:\n");

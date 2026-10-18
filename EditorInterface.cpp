@@ -57,6 +57,7 @@
 #include "EditorUI/GeoUtils.h"
 
 #include <numbers>
+#include <chrono>
 #include <optional>
 
 #include "imgui/imgui.h"
@@ -90,6 +91,7 @@ namespace {
 			nodeTransform.m[3][3] = 1.0f;
 			Matrix globalTransform = nodeTransform * transform;
 			if (showInvisibles || !IsNodeInvisible(node, isXXL2)) {
+				g_perfNodesVisited++;
 				if (node->isSubclassOf<CClone>() || node->isSubclassOf<CAnimatedClone>()) {
 					if (showClones) {
 						//auto it = std::find_if(clm->_clones.begin(), clm->_clones.end(), [node](const kobjref<CSGBranch> &ref) {return ref.get() == node; });
@@ -1151,6 +1153,7 @@ void EditorInterface::render()
 	}
 
 	if (showNodes && kenv.hasClass<CSGSectorRoot>() && kenv.hasClass<CKGeometry>()) {
+		const auto perfNodesStart = std::chrono::steady_clock::now();
 		CSGSectorRoot *rootNode = kenv.levelObjects.getObject<CSGSectorRoot>(0);
 		bool isXXL2 = kenv.version >= 2;
 		DrawSceneNode(rootNode, camera.sceneMatrix, gfx, progeocache, &protexdict, clm, showTextures, showInvisibleNodes, showClones, nodeCloneIndexMap, isXXL2);
@@ -1164,6 +1167,7 @@ void EditorInterface::render()
 			CSGSectorRoot * strRoot = kenv.sectorObjects[showingStream].getObject<CSGSectorRoot>(0);
 			DrawSceneNode(strRoot, camera.sceneMatrix, gfx, progeocache, &str_protexdicts[showingStream], clm, showTextures, showInvisibleNodes, showClones, nodeCloneIndexMap, isXXL2);
 		}
+		g_perfNodeDrawMs += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - perfNodesStart).count();
 	}
 
 	auto drawBox = [this](const Vector3 &a, const Vector3 &b, uint32_t cl = 0xFFFFFFFF) {

@@ -2,6 +2,11 @@
 #include "CoreClasses/CKDictionary.h"
 
 uint32_t ProTexDict::globalVersion = 0;
+uint64_t g_perfGeoLookups = 0;
+uint64_t g_perfMeshDraws = 0;
+uint64_t g_perfNodesVisited = 0;
+uint64_t g_perfLookupSteps = 0;
+double g_perfNodeDrawMs = 0.0;
 
 ProTexDict::ProTexDict(Renderer * gfx, CTextureDictionary * ctd) {
 	_gfx = gfx;
@@ -100,6 +105,7 @@ void ProGeometry::draw(bool showTextures) {
 		_gfx->bindTexture(0, texid);
 	else
 		_gfx->unbindTexture(0);
+	g_perfMeshDraws++;
 	_gfx->drawBuffer(0, numTris * 3);
 }
 
@@ -110,6 +116,7 @@ ProGeoCache::ProGeoCache(Renderer * gfx)
 
 ProGeometry * ProGeoCache::getPro(RwGeometry *geo, ProTexDict *proTexDict, const std::string& textureOverride)
 {
+	g_perfGeoLookups++;
 	if (textureOverride.empty()) {
 		auto it = dict.find(geo);
 		if (it != dict.end())
@@ -120,6 +127,7 @@ ProGeometry * ProGeoCache::getPro(RwGeometry *geo, ProTexDict *proTexDict, const
 	}
 	std::vector<std::unique_ptr<ProGeometry>> &variants = namedDict[geo];
 	for (auto& prog : variants) {
+		g_perfLookupSteps++;
 		if (prog->overrideKey == textureOverride)
 			return prog.get();
 	}

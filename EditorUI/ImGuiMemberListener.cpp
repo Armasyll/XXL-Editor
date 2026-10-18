@@ -6,6 +6,7 @@
 #include "CoreClasses/CKDictionary.h"
 #include "DictionaryEditors.h"
 #include "GuiUtils.h"
+#include <charconv>
 #include <nlohmann/json.hpp>
 #include "PropFlagsEditor.h"
 

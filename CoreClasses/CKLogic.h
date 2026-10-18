@@ -46,7 +46,7 @@ template<typename T, size_t N = 0> void changeVariantType(T& var, size_t index) 
 	if constexpr (N < std::variant_size_v<T>) {
 		if (index == N) {
 			if (var.index() != N)
-				var.emplace<N>();
+				var.template emplace<N>();
 		}
 		else {
 			changeVariantType<T, N + 1>(var, index);

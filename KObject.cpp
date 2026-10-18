@@ -1,6 +1,7 @@
 #include "KObject.h"
 #include "File.h"
 #include <cstdlib>
+#include <cstring>
 
 std::unordered_map<CKObject*, int> CKObject::refCounts;
 std::unordered_map<CKObject*, int> CKObject::objIdMap;

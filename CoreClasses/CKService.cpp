@@ -6,6 +6,7 @@
 #include "CKHook.h"
 #include "CKGroup.h"
 #include "CKComponent.h"
+#include <algorithm>
 #include <numbers>
 
 void CKSrvEvent::deserialize(KEnvironment * kenv, File * file, size_t length)

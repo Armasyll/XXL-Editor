@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CKUtils.h"
+#include <filesystem>
 #include <functional>
 #include <map>
 
@@ -10,7 +11,6 @@ struct CKHook;
 struct CKGroup;
 struct CKSceneNode;
 namespace EditorUI { struct EditorInterface; }
-namespace std::filesystem { class path; }
 
 namespace KFab {
 	void saveKFab(KEnvironment& kfab, CKObject* mainObj, const std::filesystem::path& path);

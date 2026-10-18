@@ -17,9 +17,9 @@ struct KLocalObject {
 };
 
 template<int CLCAT, int CLID> struct KLocalObjectSub : KLocalObject {
-	static const int CATEGORY = CLCAT;
-	static const int CLASS_ID = CLID;
-	static const int FULL_ID = CLCAT | (CLID << 6);
+	static constexpr int CATEGORY = CLCAT;
+	static constexpr int CLASS_ID = CLID;
+	static constexpr int FULL_ID = CLCAT | (CLID << 6);
 	int getFullID() override { return FULL_ID; }
 };
 

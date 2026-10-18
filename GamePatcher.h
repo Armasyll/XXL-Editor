@@ -5,7 +5,11 @@
 #include <string>
 
 namespace GamePatcher {
-	struct GamePatcherException : std::exception { using std::exception::exception; };
+	struct GamePatcherException : std::exception {
+		std::string message;
+		GamePatcherException(std::string text) : message(std::move(text)) {}
+		const char* what() const noexcept override { return message.c_str(); }
+	};
 
 	struct GamePatcherThread {
 		std::filesystem::path inputPath, elbPath, outputPath;

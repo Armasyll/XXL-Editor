@@ -1,4 +1,5 @@
 #include "GamePatcher.h"
+#include "Platform.h"
 #include "KEnvironment.h"
 #include "File.h"
 #include "GamePatcherKClasses.h"

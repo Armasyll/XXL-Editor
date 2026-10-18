@@ -267,3 +267,9 @@ imgui.ini
 xec-settings.ini
 projectPaths.txt
 xec_resources/
+
+# CMake build outputs (Linux and any out-of-source build)
+build/
+build-*/
+cmake-build-*/
+*.log

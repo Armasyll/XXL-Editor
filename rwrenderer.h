@@ -13,6 +13,13 @@ struct CTextureDictionary;
 struct RwGeometry;
 struct CKAnyGeometry;
 
+// Counters for the optional performance log (XEC_PERF, see main.cpp); they cover the current second.
+extern uint64_t g_perfGeoLookups;
+extern uint64_t g_perfMeshDraws;
+extern uint64_t g_perfNodesVisited;
+extern uint64_t g_perfLookupSteps;
+extern double g_perfNodeDrawMs;
+
 struct ProTexDict {
 	Renderer *_gfx;
 	ProTexDict *_next = nullptr;

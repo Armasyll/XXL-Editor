@@ -7,7 +7,9 @@
 #include "window.h"
 #include <stb_image_write.h>
 #include "GuiUtils.h"
+#ifdef _WIN32
 #include <io.h>
+#endif
 #include <filesystem>
 #include <charconv>
 #include <fmt/format.h>

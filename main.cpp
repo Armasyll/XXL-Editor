@@ -22,13 +22,19 @@
 #include "HomeInterface.h"
 #include "HexEditor.h"
 #include "GuiUtils.h"
+#include "Platform.h"
 
+#ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 #include <io.h>
+#endif
 #define SDL_MAIN_HANDLED
 #include <SDL2/SDL.h>
 #include <INIReader.h>
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 
 // Creates an empty level to the kenv.
@@ -117,16 +123,27 @@ void MakeEmptyXXL1Level(KEnvironment &kenv)
 	sndmgr->ksndmgrSndDictID = smSndDict;
 }
 
+// On Windows the editor is a GUI program in release builds and a console program while developing;
+// other systems use the ordinary main().
+#ifdef _WIN32
 #ifdef XEC_RELEASE
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR lpCmdLine, int nShowCmd)
 #else
 int wmain()
 #endif
+#else
+int main(int argc, char** argv)
+#endif
 {
 	// Get command line argument
 	std::filesystem::path fileArg;
+#ifdef _WIN32
 	if (__argc >= 2)
 		fileArg = __wargv[1];
+#else
+	if (argc >= 2)
+		fileArg = std::filesystem::path(argv[1]);
+#endif
 
 	// Load INI file
 	INIReader config("xec-settings.ini");
@@ -153,8 +170,12 @@ int wmain()
 	Window window;
 	Window* g_window = &window;
 
-	// Initialize graphics renderer
+	// Initialize graphics renderer: Direct3D 9 on Windows, OpenGL on the other systems.
+#ifdef _WIN32
 	Renderer* gfx = CreateRendererD3D9(g_window);
+#else
+	Renderer* gfx = CreateRendererOGL1(g_window);
+#endif
 	// Initialize Dear ImGui
 	ImGuiImpl_Init(g_window);
 	ImGuiImpl_CreateFontsTexture(gfx);
@@ -258,13 +279,25 @@ int wmain()
 	editUI.prepareLevelGfx();
 	editUI.levelNum = initlevel;
 
+	// Optional per-second performance log, enabled by setting the XEC_PERF environment variable.
+	const bool perfLog = std::getenv("XEC_PERF") != nullptr;
+	auto perfNow = [perfLog]() { return perfLog ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point(); };
+	auto perfMs = [](std::chrono::steady_clock::duration d) { return std::chrono::duration<double, std::milli>(d).count(); };
+	auto perfWindowStart = std::chrono::steady_clock::now();
+	int perfFrames = 0;
+	double perfFrameMs = 0.0, perfIterMs = 0.0, perfRenderMs = 0.0, perfUiMs = 0.0;
+
 	while (!g_window->quitted()) {
+		const auto frameStart = perfNow();
+
 		// Get window input
 		g_window->handle();
+		const auto afterHandle = perfNow();
 
 		// Input + ImGui handling
 		ImGuiImpl_NewFrame(g_window);
 		editUI.iter();
+		const auto afterIter = perfNow();
 
 		// Rendering
 		gfx->setSize(g_window->getWidth(), g_window->getHeight());
@@ -277,8 +310,31 @@ int wmain()
 		}
 		gfx->clearFrame(true, true, bgndColor);
 		editUI.render();
+		const auto afterRender = perfNow();
 		ImGuiImpl_Render(gfx);
 		gfx->endFrame();
+
+		if (perfLog) {
+			const auto frameEnd = std::chrono::steady_clock::now();
+			++perfFrames;
+			perfFrameMs += perfMs(frameEnd - frameStart);
+			perfIterMs += perfMs(afterIter - afterHandle);
+			perfRenderMs += perfMs(afterRender - afterIter);
+			perfUiMs += perfMs(frameEnd - afterRender);
+			if (frameEnd - perfWindowStart >= std::chrono::seconds(1)) {
+				const double perfSecs = std::chrono::duration<double>(frameEnd - perfWindowStart).count();
+				std::fprintf(stderr, "[perf] fps=%.1f frame=%.1fms iter=%.1fms render=%.1fms nodedraw=%.1fms ui=%.1fms nodes=%llu draws=%llu lookups=%llu steps=%llu cache=%zu\n",
+					perfFrames / perfSecs, perfFrameMs / perfFrames, perfIterMs / perfFrames, perfRenderMs / perfFrames, g_perfNodeDrawMs / perfFrames, perfUiMs / perfFrames,
+					(unsigned long long)g_perfNodesVisited, (unsigned long long)g_perfMeshDraws, (unsigned long long)g_perfGeoLookups,
+					(unsigned long long)g_perfLookupSteps, editUI.progeocache.namedDict.size());
+				std::fflush(stderr);
+				perfFrames = 0;
+				perfFrameMs = perfIterMs = perfRenderMs = perfUiMs = 0.0;
+				perfWindowStart = frameEnd;
+				g_perfNodesVisited = g_perfMeshDraws = g_perfGeoLookups = g_perfLookupSteps = 0;
+				g_perfNodeDrawMs = 0.0;
+			}
+		}
 	}
 
 	return 0;

@@ -139,11 +139,11 @@ void NodeCollisionUtils::CreateCollisionsForObject(KEnvironment& kenv, CKObject*
 				const std::string_view otherObjkey = objkey == "obj1" ? "obj2" : "obj1";
 				const int otherClassFullID = jsTest.at(otherObjkey).at(0);
 
-				auto* objShape = getShapeFromMember(kenv, owner, jsTest.at(objkey).at(1));
+				auto* objShape = getShapeFromMember(kenv, owner, jsTest.at(objkey).at(1).get<std::string>());
 				if (!objShape) {
 					break;
 				}
-				auto otherShapes = getAllShapesFromMember(kenv, otherClassFullID, jsTest.at(otherObjkey).at(1));
+				auto otherShapes = getAllShapesFromMember(kenv, otherClassFullID, jsTest.at(otherObjkey).at(1).get<std::string>());
 
 				for (auto [otherOwner, otherShape] : otherShapes) {
 					if (owner == otherOwner)
@@ -156,8 +156,8 @@ void NodeCollisionUtils::CreateCollisionsForObject(KEnvironment& kenv, CKObject*
 							assert(jsChild.at(objkey).at(0) == classFullID);
 							assert(jsChild.at(otherObjkey).at(0) == otherClassFullID);
 
-							auto* childShape = getShapeFromMember(kenv, owner, jsChild.at(objkey).at(1), objShape);
-							auto* otherChildShape = getShapeFromMember(kenv, otherOwner, jsChild.at(otherObjkey).at(1), otherShape);
+							auto* childShape = getShapeFromMember(kenv, owner, jsChild.at(objkey).at(1).get<std::string>(), objShape);
+							auto* otherChildShape = getShapeFromMember(kenv, otherOwner, jsChild.at(otherObjkey).at(1).get<std::string>(), otherShape);
 							assert(childShape && otherChildShape);
 
 							auto childIndex = srvCollision->addCollision(owner, childShape, otherOwner, otherChildShape);
