@@ -187,10 +187,13 @@ struct RendererOGL1 : Renderer {
 		glVertex3f(end.x, end.y, end.z);
 		glEnd();
 	}
-	void initModelDrawing() override
+	void initModelDrawing(bool showBackfaces) override
 	{
+		if (showBackfaces)
+			glDisable(GL_CULL_FACE); // "Show backfaces": draw the reverse side of the meshes too
+		else
+			glEnable(GL_CULL_FACE);
 		glEnable(GL_ALPHA_TEST);
-		glEnable(GL_CULL_FACE);
 		glDisable(GL_BLEND);
 		glEnable(GL_DEPTH_TEST);
 	}

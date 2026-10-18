@@ -264,9 +264,9 @@ struct RendererD3D9 : public Renderer {
 		verts[1].x = end.x; verts[1].y = end.y; verts[1].z = end.z; verts[1].color = c; verts[1].u = verts[1].v = 0.0f;
 		ddev->DrawPrimitiveUP(D3DPT_LINELIST, 1, verts, sizeof(RVertex));
 	}
-	void initModelDrawing() override
+	void initModelDrawing(bool showBackfaces) override
 	{
-		ddev->SetRenderState(D3DRS_CULLMODE, D3DCULL_CCW);
+		ddev->SetRenderState(D3DRS_CULLMODE, showBackfaces ? D3DCULL_NONE : D3DCULL_CCW);
 		ddev->SetRenderState(D3DRS_LIGHTING, FALSE);
 		ddev->SetRenderState(D3DRS_ZENABLE, TRUE);
 		ddev->SetRenderState(D3DRS_ALPHATESTENABLE, TRUE);

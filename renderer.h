@@ -72,7 +72,9 @@ struct Renderer {
 	virtual void drawLine3D(const Vector3 &start, const Vector3 &end, uint32_t color = 0xFFFFFFFF) = 0;
 
 	// Model drawing
-	virtual void initModelDrawing() = 0;
+	// showBackfaces draws both sides of the meshes: the "Show backfaces" view option, for meshes whose
+	// triangles are wound the other way around. Default false keeps backface culling on.
+	virtual void initModelDrawing(bool showBackfaces) = 0;
 };
 
 Renderer *CreateRendererOGL1(Window *window);

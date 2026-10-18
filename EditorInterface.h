@@ -104,6 +104,7 @@ struct EditorInterface {
 	int showingChoreography = 0;
 	int showingChoreoKey = 0;
 	bool enableAlphaClip = true;
+	bool showBackfaces = false;
 
 	int showingSector = 0;
 

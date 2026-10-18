@@ -1131,7 +1131,7 @@ void EditorInterface::iter()
 
 void EditorInterface::render()
 {
-	gfx->initModelDrawing();
+	gfx->initModelDrawing(showBackfaces);
 	if (enableAlphaClip)
 		gfx->enableAlphaClip();
 	else
@@ -1931,7 +1931,8 @@ void EditorInterface::IGMain()
 	ImGui::InputInt("Show sector", &showingSector);
 	ImGui::Checkbox("Scene nodes", &showNodes); ImGui::SameLine();
 	ImGui::Checkbox("Textures", &showTextures); ImGui::SameLine();
-	ImGui::Checkbox("Alpha clip", &enableAlphaClip);
+	ImGui::Checkbox("Alpha clip", &enableAlphaClip); ImGui::SameLine();
+	ImGui::Checkbox("Show backfaces", &showBackfaces);
 	ImGui::Checkbox("Invisible nodes", &showInvisibleNodes); ImGui::SameLine();
 	ImGui::Checkbox("Clone nodes", &showClones);
 	ImGui::Checkbox("Beacons", &showBeacons); ImGui::SameLine();
