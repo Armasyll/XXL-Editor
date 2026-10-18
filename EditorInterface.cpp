@@ -74,6 +74,14 @@ namespace {
 		return isXXL2 ? ((node->unk1 & 4) && !(node->unk1 & 0x10)) : (node->unk1 & 2);
 	}
 
+	// The texture a mesh should be drawn with: the RenderWare material of the mesh itself, or for
+	// Spyro DotD the diffuse texture of the material object the geometry refers to.
+	const std::string& GetMeshTexture(CKAnyGeometry* kgeo, CKAnyGeometry* rgeo) {
+		if (!kgeo->getMaterialTextureName().empty())
+			return kgeo->getMaterialTextureName();
+		return rgeo->getMaterialTextureName();
+	}
+
 	void DrawSceneNode(CKSceneNode *node, const Matrix &transform, Renderer *gfx, ProGeoCache &geocache, ProTexDict *texdict, CCloneManager *clm, bool showTextures, bool showInvisibles, bool showClones, std::map<CSGBranch*, int> &nodeCloneIndexMap, bool isXXL2)
 	{
 		for (; node; node = node->next.get()) {
@@ -103,7 +111,7 @@ namespace {
 						if (auto& rwminiclp = rgeo->clump)
 							if (RwGeometry *rwgeo = rwminiclp->atomic.geometry.get())
 								if((rwgeo->flags & RwGeometry::RWGEOFLAG_NATIVE) == 0)
-									geocache.getPro(rwgeo, texdict)->draw(showTextures);
+									geocache.getPro(rwgeo, texdict, GetMeshTexture(kgeo, rgeo))->draw(showTextures);
 					}
 				}
 				if (node->isSubclassOf<CSGBranch>())

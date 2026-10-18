@@ -1089,7 +1089,7 @@ void ClassRegister::registerClassesForSpyro(KEnvironment& kenv)
 	kenv.addFactory<CKDetectedMovable>();
 	kenv.addFactory<CKTriggerDomain>();
 	kenv.addFactory<CSGHotSpot>();
-	//kenv.addFactory<CMaterial>();
+	kenv.addFactory<CMaterial>(); // Spyro DotD: material objects carry the mesh textures
 	kenv.addFactory<CKMusicPlayList>();
 	kenv.addFactory<CKDetectorMusic>();
 	kenv.addFactory<CMultiGeometryBasic>();

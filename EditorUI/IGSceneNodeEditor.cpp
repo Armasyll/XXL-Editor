@@ -277,6 +277,9 @@ void EditorUI::IGSceneNodeProperties(EditorInterface& ui)
 					if (!rwgeo->materialList.materials.empty())
 						if (rwgeo->materialList.materials[0].isTextured)
 							matname = geo->clump->atomic.geometry->materialList.materials[0].texture.name.c_str();
+					// Spyro DotD keeps the texture on the material object instead
+					if (matname[0] == '(' && !wgeo->getMaterialTextureName().empty())
+						matname = wgeo->getMaterialTextureName().c_str();
 					ImGui::PushID(geo);
 					ImGui::BulletText("%s%s", matname, (geo != wgeo) ? " (duplicated geo)" : "");
 					ImGui::InputScalar("Flags 1", ImGuiDataType_U32, &geo->flags, 0, 0, "%X", ImGuiInputTextFlags_CharsHexadecimal);

@@ -2002,8 +2002,64 @@ void CMaterial::Extension::reflectMembers(MemberListener& r)
 	}
 }
 
+void CMaterial::deserialize(KEnvironment* kenv, File* file, size_t length)
+{
+	if (kenv->version >= KEnvironment::KVERSION_SPYRO) {
+		spRawBody.resize(length);
+		if (length > 0)
+			file->read(spRawBody.data(), length);
+		auto wordAt = [this](size_t offset) -> uint32_t {
+			if (offset + 4 > spRawBody.size())
+				return 0;
+			return (uint32_t)spRawBody[offset] | ((uint32_t)spRawBody[offset + 1] << 8) | ((uint32_t)spRawBody[offset + 2] << 16) | ((uint32_t)spRawBody[offset + 3] << 24);
+		};
+		spTag = wordAt(0);
+		spRef = wordAt(4);
+		spTextureNames.clear();
+		// Texture names are 16 bit length prefixed strings inside the body
+		size_t i = 0;
+		while (i + 2 <= spRawBody.size()) {
+			uint16_t len = (uint16_t)(spRawBody[i] | (spRawBody[i + 1] << 8));
+			if (len >= 1 && len <= 60 && i + 2 + len <= spRawBody.size()) {
+				bool printable = true;
+				for (size_t j = 0; j < len; j++) {
+					uint8_t c = spRawBody[i + 2 + j];
+					if (c < 32 || c >= 127) { printable = false; break; }
+				}
+				if (printable) {
+					spTextureNames.emplace_back((const char*)spRawBody.data() + i + 2, len);
+					i += 2 + len;
+					continue;
+				}
+			}
+			i++;
+		}
+		return;
+	}
+	CKMemberReflectable<CKLogic>::deserialize(kenv, file, length);
+}
+
+void CMaterial::serialize(KEnvironment* kenv, File* file)
+{
+	if (kenv->version >= KEnvironment::KVERSION_SPYRO) {
+		if (!spRawBody.empty())
+			file->write(spRawBody.data(), spRawBody.size());
+		return;
+	}
+	CKMemberReflectable<CKLogic>::serialize(kenv, file);
+}
+
 void CMaterial::reflectMembers2(MemberListener& r, KEnvironment* kenv)
 {
+	if (kenv->version >= KEnvironment::KVERSION_SPYRO) {
+		// Druids of the Dragon materials are kept as a raw body (see the header comment); the
+		// inspector only shows the words and texture names read out of it.
+		r.reflect(spTag, "spTag");
+		r.reflect(spRef, "spRef");
+		for (size_t i = 0; i < spTextureNames.size(); i++)
+			r.reflect(spTextureNames[i], (std::string("spTextureName") + std::to_string(i)).c_str());
+		return;
+	}
 	r.reflect(geometry, "geometry");
 	r.reflect(flags, "flags");
 	int type = (flags >> 3) & 15;

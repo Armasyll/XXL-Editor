@@ -45,6 +45,11 @@ struct CKAnyGeometry : CKSubclass<IKRenderable, 0, 10> {
 	// Alice+:
 	std::array<uint8_t, 5> alBytes = { 0,0,0,0,0 };
 
+	// Texture of the material object this geometry refers to. Spyro DotD keeps the texture of a
+	// mesh in its material object instead of the geometry's RenderWare material list, so the
+	// renderer asks for it here. Empty for every other game.
+	const std::string& getMaterialTextureName() const;
+
 	void deserialize(KEnvironment* kenv, File *file, size_t length) override;
 	void serialize(KEnvironment* kenv, File *file) override;
 };

@@ -901,6 +901,27 @@ struct CMaterial : CKMRSubclass<CMaterial, CKReflectableLogic, 175> {
 	// Olympic+:
 	float ogUnkFlt = 50.0f;
 
+	// Spyro DotD (PS3/360): the material layout is only partly understood, so the object body is
+	// kept byte for byte (which makes saving a level lossless) and the texture names it references
+	// are read out of it: 16 bit length prefixed strings, in the order environment map, base
+	// texture, second environment map. spDiffuseName is the one a mesh is drawn with.
+	std::vector<uint8_t> spRawBody;
+	std::vector<std::string> spTextureNames;
+	uint32_t spTag = 0; // first word of the body, seen as 0x00XX8A00 / 0x00XX4A00 / 0x00XXCA00
+	uint32_t spRef = 0; // second word of the body, a game reference (texture dictionary / shader)
+
+	const std::string& spDiffuseName() const {
+		static const std::string empty;
+		// The first name is the environment map, the base texture follows it when present.
+		return (spTextureNames.size() >= 2) ? spTextureNames[1] : empty;
+	}
+	const std::string& spEnvName() const {
+		static const std::string empty;
+		return spTextureNames.empty() ? empty : spTextureNames[0];
+	}
+
+	void deserialize(KEnvironment* kenv, File *file, size_t length) override;
+	void serialize(KEnvironment* kenv, File *file) override;
 	void reflectMembers2(MemberListener& r, KEnvironment* kenv);
 };
 

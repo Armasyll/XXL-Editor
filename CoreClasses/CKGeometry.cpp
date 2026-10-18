@@ -6,6 +6,14 @@
 #include <cassert>
 #include "CKGraphical.h"
 
+const std::string& CKAnyGeometry::getMaterialTextureName() const
+{
+	static const std::string empty;
+	if (CMaterial* mat = material.get())
+		return mat->spDiffuseName();
+	return empty;
+}
+
 void CKAnyGeometry::deserialize(KEnvironment * kenv, File * file, size_t length)
 {
 	IKRenderable::deserialize(kenv, file, 0);

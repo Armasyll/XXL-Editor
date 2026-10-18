@@ -181,7 +181,7 @@ void EditorUI::RenderAnimation(EditorInterface& ui)
 						}
 						tfGeo.verts[vtx] = tfVertex;
 					}
-					ProGeometry progeo(gfx, &tfGeo, texDict);
+					ProGeometry progeo(gfx, &tfGeo, texDict, std::string());
 					progeo.draw(true);
 				}
 			}

@@ -35,10 +35,11 @@ void ProTexDict::reset(CTextureDictionary * ctd)
 	}
 }
 
-ProGeometry::ProGeometry(Renderer * gfx, RwGeometry * geo, ProTexDict * proTexDict)
+ProGeometry::ProGeometry(Renderer * gfx, RwGeometry * geo_, ProTexDict * proTexDict, const std::string &textureOverride)
 {
 	_gfx = gfx;
 	_proTexDict = proTexDict;
+	geo = geo_;
 	numTris = geo->tris.size();
 	vbuf.reset(gfx->createVertexBuffer(geo->numVerts));
 	ibuf.reset(gfx->createIndexBuffer(geo->tris.size() * 3));
@@ -73,6 +74,12 @@ ProGeometry::ProGeometry(Renderer * gfx, RwGeometry * geo, ProTexDict * proTexDi
 	if (!matvec.empty())
 		if (matvec[0].isTextured)
 			textureName = matvec[0].texture.name;
+	// Spyro DotD: the mesh has no material of its own, its texture is on the game's material object
+	if (textureName.empty())
+		textureName = textureOverride;
+	// The key this instance is cached under, so a later lookup of the same geometry with the same
+	// material texture finds it again.
+	overrideKey = textureOverride;
 }
 
 void ProGeometry::draw(bool showTextures) {
@@ -101,12 +108,21 @@ ProGeoCache::ProGeoCache(Renderer * gfx)
 	_gfx = gfx;
 }
 
-ProGeometry * ProGeoCache::getPro(RwGeometry *geo, ProTexDict *proTexDict)
+ProGeometry * ProGeoCache::getPro(RwGeometry *geo, ProTexDict *proTexDict, const std::string& textureOverride)
 {
-	auto it = dict.find(geo);
-	if (it != dict.end())
-		return it->second.get();
-	ProGeometry *prog = new ProGeometry(_gfx, geo, proTexDict);
-	dict[geo] = std::unique_ptr<ProGeometry>(prog);
-	return prog;
+	if (textureOverride.empty()) {
+		auto it = dict.find(geo);
+		if (it != dict.end())
+			return it->second.get();
+		ProGeometry *prog = new ProGeometry(_gfx, geo, proTexDict, textureOverride);
+		dict[geo] = std::unique_ptr<ProGeometry>(prog);
+		return prog;
+	}
+	std::vector<std::unique_ptr<ProGeometry>> &variants = namedDict[geo];
+	for (auto& prog : variants) {
+		if (prog->overrideKey == textureOverride)
+			return prog.get();
+	}
+	variants.emplace_back(new ProGeometry(_gfx, geo, proTexDict, textureOverride));
+	return variants.back().get();
 }
