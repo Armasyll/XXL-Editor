@@ -535,6 +535,8 @@ RwGeometry RwGeometry::convertToPI()
 		return convertToPI_GCN();
 	case byteswap32(9):
 		return convertToPI_X360();
+	case byteswap32(12):
+		return convertToPI_PS3();
 	default: {
 		// give an empty geometry for unsupported platforms
 		RwGeometry empty;
@@ -988,6 +990,163 @@ RwGeometry RwGeometry::convertToPI_X360()
 		printf("\n");
 	}
 	*/
+
+	return cvt;
+}
+
+// "The Legend of Spyro: Dawn of the Dragon" (and other Kal games) on PS3 store geometry in a
+// console-native chunk (RwExtNativeData, platform 12) holding big-endian index and vertex buffers.
+// The mesh is a triangle strip list, where strips are joined by degenerate triangles, when
+// RWGEOFLAG_TRISTRIP is set, else a plain triangle list. A vertex is 48 bytes: position f32x3,
+// normal f32x3, colour u8x4, texcoords f32x2, tangent f32x3 (the tangent is not imported).
+// The index buffer follows the 0x7C byte header, the vertex buffer ends the chunk.
+RwGeometry RwGeometry::convertToPI_PS3()
+{
+	RwGeometry* geo = this;
+
+	RwGeometry empty;
+	auto giveUp = [&empty]() {
+		// Not a layout this port understands: give an empty geometry instead of guessing
+		empty.flags = 0;
+		empty.numTris = 0;
+		empty.numVerts = 0;
+		empty.numMorphs = 0;
+		return empty;
+	};
+
+	RwExtNativeData* nat = (RwExtNativeData*)geo->extensions.find(0x510);
+	if (!nat || nat->data.size() < 0x7C)
+		return giveUp();
+
+	MemFile mf(nat->data.data());
+	auto platform = byteswap32(mf.readUint32());
+	auto headSize = byteswap32(mf.readUint32());
+	auto meshId = byteswap32(mf.readUint32());
+	auto unk03 = byteswap32(mf.readUint32());
+	auto nativeFlags = byteswap32(mf.readUint32());
+	auto unk05 = byteswap32(mf.readUint32());
+	auto numVertices = byteswap32(mf.readUint32());
+	auto vertexDataSize = byteswap32(mf.readUint32());
+	auto unk08 = byteswap32(mf.readUint32());
+	auto numVerticesM1 = byteswap32(mf.readUint32());
+	auto numIndices = byteswap32(mf.readUint32());
+	auto unk11 = byteswap32(mf.readUint32());
+	if (platform != 12 || headSize != 0x7C)
+		return giveUp();
+	if (numVertices == 0 || numVertices != geo->numVerts || numVerticesM1 != numVertices - 1)
+		return giveUp();
+	if (numIndices == 0 || numIndices > 0x100000)
+		return giveUp();
+	uint32_t stride = vertexDataSize / numVertices;
+	if (stride * (size_t)numVertices != vertexDataSize)
+		return giveUp();
+
+	// Vertex layout of this mesh: a position (f32x3) followed by the optional attributes the chunk
+	// carries: normal f32x3, colour u8x4, texcoords f32x2, tangent f32x3, in that order. Skinned
+	// meshes pad the vertex with 32 bytes of bone weights and indices, which this editor, drawing
+	// meshes in bind pose, does not need. A mesh with a size that fits no layout keeps its empty
+	// geometry instead of being guessed at.
+	uint32_t baseStride = stride;
+	if (baseStride > 48)
+		baseStride -= 32; // skinned vertex
+	uint32_t offNormal = 0, offColor = 0, offUv = 0;
+	switch (baseStride) {
+	case 24: offColor = 12; offUv = 16; break;                        // position, colour, texcoords
+	case 32: offNormal = 12; offUv = 24; break;                       // position, normal, texcoords
+	case 36: offNormal = 12; offColor = 24; offUv = 28; break;        // + colour
+	case 44: offNormal = 12; offUv = 24; break;                       // + tangent
+	case 48: offNormal = 12; offColor = 24; offUv = 28; break;        // + colour and tangent
+	default: return giveUp();
+	}
+	if (0x7C + (size_t)numIndices * 4 > nat->data.size())
+		return giveUp();
+	const uint8_t* idxData = nat->data.data() + 0x7C;
+	const uint8_t* vertData = nat->data.data() + (nat->data.size() - vertexDataSize);
+	if (vertData < idxData + (size_t)numIndices * 4)
+		return giveUp();
+
+	auto readBE32 = [](const uint8_t* p) {
+		return (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3];
+	};
+	auto readBEf = [&readBE32](const uint8_t* p) {
+		uint32_t v = readBE32(p);
+		float f; memcpy(&f, &v, 4); return f;
+	};
+
+	RwGeometry cvt;
+	cvt.flags = 0;
+	cvt.numTris = 0;
+	cvt.numVerts = numVertices;
+	cvt.numMorphs = 1;
+	cvt.texSets.resize(1);
+	cvt.spherePos = geo->spherePos;
+	cvt.sphereRadius = geo->sphereRadius;
+	cvt.hasVertices = 1;
+	cvt.flags |= RWGEOFLAG_POSITIONS | RWGEOFLAG_TEXTURED;
+	if (offNormal != 0) {
+		cvt.hasNormals = 1;
+		cvt.flags |= RWGEOFLAG_NORMALS;
+		cvt.norms.resize(numVertices);
+	}
+	if (offColor != 0)
+		cvt.flags |= RWGEOFLAG_PRELIT;
+	cvt.materialList = geo->materialList;
+	cvt.extensions = geo->extensions;
+	cvt.verts.resize(numVertices);
+	cvt.texSets[0].resize(numVertices);
+	cvt.colors.assign(numVertices, 0xFFFFFFFF);
+	for (uint32_t i = 0; i < numVertices; i++) {
+		const uint8_t* vp = vertData + (size_t)i * stride;
+		cvt.verts[i] = Vector3(readBEf(vp), readBEf(vp + 4), readBEf(vp + 8));
+		if (offNormal)
+			cvt.norms[i] = Vector3(readBEf(vp + offNormal), readBEf(vp + offNormal + 4), readBEf(vp + offNormal + 8));
+		// vertex colour, stored as four bytes (red, green, blue, alpha) at the given offset
+		if (offColor)
+			cvt.colors[i] = (uint32_t)vp[offColor] | ((uint32_t)vp[offColor + 1] << 8) | ((uint32_t)vp[offColor + 2] << 16) | ((uint32_t)vp[offColor + 3] << 24);
+		cvt.texSets[0][i][0] = readBEf(vp + offUv);
+		cvt.texSets[0][i][1] = readBEf(vp + offUv + 4);
+	}
+
+	uint32_t targetTris = geo->numTris;
+	if (nativeFlags & RWGEOFLAG_TRISTRIP) {
+		// Strips are concatenated and separated by degenerate triangles (a repeated index). Every
+		// other triangle of a strip is wound the other way round. The count in the native header is
+		// the number of real triangles, so the walk stops there (the index buffer can end with a
+		// few words that would otherwise close one more triangle).
+		size_t numIndexWords = (nat->data.size() - 0x7C - vertexDataSize) / 4;
+		bool flip = false;
+		for (size_t i = 0; i + 2 < numIndexWords && cvt.numTris < targetTris; i++) {
+			uint32_t a = readBE32(idxData + i * 4), b = readBE32(idxData + (i + 1) * 4), c = readBE32(idxData + (i + 2) * 4);
+			if (a == b || b == c || a == c) {
+				flip = false;
+				continue;
+			}
+			if (a >= numVertices || b >= numVertices || c >= numVertices)
+				continue;
+			Triangle tri;
+			tri.indices[0] = (uint16_t)a;
+			tri.indices[1] = (uint16_t)(flip ? c : b);
+			tri.indices[2] = (uint16_t)(flip ? b : c);
+			tri.materialId = 0;
+			cvt.tris.push_back(tri);
+			cvt.numTris++;
+			flip = !flip;
+		}
+	}
+	else {
+		for (uint32_t i = 0; i + 2 < numIndices && cvt.numTris < targetTris; i += 3) {
+			uint32_t a = readBE32(idxData + (size_t)i * 4), b = readBE32(idxData + (size_t)(i + 1) * 4), c = readBE32(idxData + (size_t)(i + 2) * 4);
+			if (a >= numVertices || b >= numVertices || c >= numVertices)
+				continue;
+			Triangle tri;
+			tri.indices[0] = (uint16_t)a;
+			tri.indices[1] = (uint16_t)b;
+			tri.indices[2] = (uint16_t)c;
+			tri.materialId = 0;
+			cvt.tris.push_back(tri);
+			cvt.numTris++;
+		}
+	}
 
 	return cvt;
 }

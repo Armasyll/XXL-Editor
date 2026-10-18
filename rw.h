@@ -137,6 +137,7 @@ struct RwGeometry {
 	RwGeometry convertToPI();
 	RwGeometry convertToPI_GCN();
 	RwGeometry convertToPI_X360();
+	RwGeometry convertToPI_PS3();
 };
 
 struct RwAtomic {
